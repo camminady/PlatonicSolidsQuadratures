@@ -11,12 +11,35 @@ import numpy as np
 from numba import njit
 
 from platonicsolids import getVerticesAndFaces
-from geometryhelper import *
+from geometryhelper import getarea
 
 
-def platonicsolidsquadrature(platonicsolid, n):
+def platonicsolidsquadrature(platonicsolid, n, slerpflag=False):
+
+    if slerpflag:
+
+        def interp(pointa, pointb, n):
+            """Spherical linear interpolation between
+            two points."""
+            if n == 1:
+                return pointa
+            omega = np.arccos(np.dot(pointa, pointb))
+            t = np.linspace(0, 1, n)
+
+            return (
+                np.outer(pointa, np.sin((1 - t) * omega) / np.sin(omega))
+                + np.outer(pointb, np.sin((t) * omega) / np.sin(omega))
+            ).T
+
+    else:
+
+        def interp(p0, p1, n):
+            print(n)
+            print(p0.shape)
+            return np.linspace(p0, p1, n)
+
     vertices, faces = getVerticesAndFaces(platonicsolid)
-    pts, con = getpoints(vertices, faces, n)
+    pts, con = getpoints(vertices, faces, n, interp)
     neighbours = getneighbours(pts, con)
     neighbours = sortneighbours(neighbours)
     weights, ptsdual = computeareaanddual(pts, neighbours)
@@ -24,7 +47,7 @@ def platonicsolidsquadrature(platonicsolid, n):
     return pts, weights, neighbours, ptsdual, vertices, faces
 
 
-def triangulateface(p0, p1, p2, n):
+def triangulateface(p0, p1, p2, n, interp):
     """
     Ginven three points and the number of points along an edge,
     this performs the triangulation and returns
@@ -32,8 +55,9 @@ def triangulateface(p0, p1, p2, n):
     is stored in an undirected way.
     """
     assert n >= 2
-    count = lambda i: (i + 1) * (i + 2) // 2  # Number of points up to row i.
-    interp = lambda p0, p1, n: np.linspace(p0, p1, n)  # Can be changed to slerp.
+
+    def count(i):
+        return (i + 1) * (i + 2) // 2  # Number of points up to row i.
 
     pts = np.zeros((0, 3))  # Store points' coordinates.
     con = np.zeros((0, 2), dtype=int)  # Store connection ids.
@@ -60,13 +84,15 @@ def triangulateface(p0, p1, p2, n):
     return pts, con
 
 
-def triangulateallfaces(vertices, faces, n):
+def triangulateallfaces(vertices, faces, n, interp):
 
     pts = np.zeros((0, 3))  # Store points' coordinates.
     con = np.zeros((0, 2), dtype=int)  # Store connection ids.
     for i in range(faces.shape[0]):
         a, b, c = faces[i, :]
-        ptsi, coni = triangulateface(vertices[a, :], vertices[b, :], vertices[c, :], n)
+        ptsi, coni = triangulateface(
+            vertices[a, :], vertices[b, :], vertices[c, :], n, interp
+        )
         con = np.vstack([con, coni + pts.shape[0]])  # Offset points ids and store.
         pts = np.vstack([pts, ptsi])  # Store new points
 
@@ -96,10 +122,7 @@ def merge(pts, con):
     """
 
     matches = getmatches(pts)
-    npts = pts.shape[0]
 
-    # d = distance_matrix(pts,pts)
-    # matches = np.argwhere(np.isclose(d,0.0,atol = 1e-10)) # Points that are equal.
     matches = np.sort(matches)
     newids = np.arange(pts.shape[0])
     toremove = np.zeros(0, dtype=int)
@@ -121,12 +144,12 @@ def merge(pts, con):
     return pts, con
 
 
-def getpoints(vertices, faces, n):
+def getpoints(vertices, faces, n, interp):
     """
     Returns the unprojected points and their connectivity.
     npoints = 4n**2−8n+6
     """
-    pts, con = triangulateallfaces(vertices, faces, n)
+    pts, con = triangulateallfaces(vertices, faces, n, interp)
     pts, con = merge(pts, con)
     return pts, con
 
@@ -189,10 +212,6 @@ def computeareaanddual(pts, neighbours):
             pij = (pi + pj) / 2
             pik = (pi + pk) / 2
             pc = (pi + pj + pk) / 3
-            # heros formula
-            # a,b,c = np.linalg.norm(pi-pj),np.linalg.norm(pi-pk),np.linalg.norm(pk-pj)
-            # s = (a+b+c)/2
-            # areas[i] += np.sqrt(s*(s-a)*(s-b)*(s-c))
             areas[i] += getarea(pi, pij, pc) + getarea(pi, pc, pik)
             pcenter = (pi + pj + pk) / 3
             ptsdual[i, m, :] = pcenter
