@@ -34,8 +34,8 @@ def platonicsolidsquadrature(platonicsolid, n, slerpflag=False):
     else:
 
         def interp(p0, p1, n):
-            print(n)
-            print(p0.shape)
+            #print(n)
+            #print(p0.shape)
             return np.linspace(p0, p1, n)
 
     vertices, faces = getVerticesAndFaces(platonicsolid)
